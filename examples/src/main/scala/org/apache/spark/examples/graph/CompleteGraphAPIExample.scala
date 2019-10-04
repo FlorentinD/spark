@@ -19,12 +19,11 @@ package org.apache.spark.examples.graph
 // $example on$
 
 import org.apache.spark.cypher.SparkCypherSession
-import org.apache.spark.graph.api.PropertyGraph
-import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
+import org.apache.spark.graph.api.{NodeFrame, PropertyGraph, RelationshipFrame}
+import org.apache.spark.sql.{SaveMode, SparkSession}
 // $example off$
 
 object CompleteGraphAPIExample {
-
   def main(args: Array[String]): Unit = {
     // Creates a SparkSession.
     val spark = SparkSession
@@ -33,37 +32,46 @@ object CompleteGraphAPIExample {
       .getOrCreate()
     val sc = spark.sparkContext
 
+    // Load node dfs and edge df
+    val userData = spark.read.csv("examples/src/main/resources/mini_yelp/user.csv")
+    val businessData = spark.read.csv("examples/src/main/resources/mini_yelp/business.csv")
+    val reviewData = spark.read.csv("examples/src/main/resources/mini_yelp/review.csv")
+
     // Initialise a GraphSession
     val cypherSession = SparkCypherSession.create(spark)
-    // TODO: load via CSV (2 nodeFrames and 2 relationship frames ?)
-    // Create node df and edge df
-    val nodeData: DataFrame = spark.createDataFrame(Seq(0 -> "Alice", 1 -> "Bob"))
-      .toDF("id", "name")
-    val relationshipData: DataFrame = spark.createDataFrame(Seq((0, 0, 1)))
-      .toDF("id", "source", "target")
 
-    // TODO: create specific node and relationship frames
+    // Create Node- and RelationshipFrames
+    val userNodeFrame = NodeFrame.create(userData, "id", Set("USER"))
+    val businessNodeFrame = NodeFrame.create(businessData, "id", Set("BUSINESS"))
+    val reviewRelationshipFrame = RelationshipFrame.create(reviewData, "id", "user", "business", "REVIEWS")
+
 
     // Create a PropertyGraph
-    val graph: PropertyGraph = cypherSession.createGraph(nodeData, relationshipData)
+    val graph: PropertyGraph = cypherSession.createGraph(Array(userNodeFrame, businessNodeFrame), Array(reviewRelationshipFrame))
 
-    // Show graph API
-    graph.schema
+    // Get existing node labels
+    val labelSet = graph.schema.labels
+    print(s"The graph contains nodes with the following labels: ${labelSet.mkString(",")}")
 
-    graph.relationshipFrame("KNOWS")
-    graph.nodeFrame(Array("Employee", "Employer"))
-    graph.cypher(
+    val businessNodes = graph.nodeFrame(Array("Business"))
+    businessNodes.df.show()
+
+    // Run parameterized cypher query
+    val result = graph.cypher(
       """
-        |MATCH (a:Person)-[r:KNOWS]->(:Person)
+        |MATCH (a:USER)-[r:REVIEWS]->(b:BUSINESS)
         |WHERE a.name = $name
-        |RETURN a, r""".stripMargin, Map("name" -> "Bob"))
+        |RETURN a, r.rating, b.name""".stripMargin, Map("name" -> "Bob"))
+
+    print("Reviews from Bob")
+    result.df.show()
 
     // Store the PropertyGraph
-    val path = "examples/src/main/resources/exampleGraph"
-    graph.save(path, SaveMode.Ignore)
+    val savePath = "examples/src/main/resources/exampleGraph/"
+    graph.save(savePath, SaveMode.Overwrite)
 
     // Load the PropertyGraph
-    val importedGraph = cypherSession.load(path)
+    val importedGraph = cypherSession.load(savePath)
 
 
     spark.stop()
