@@ -23,7 +23,7 @@ import org.apache.spark.cypher.SparkCypherSession
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.SparkSession
 
-object SimpleDemo {
+object SimpleExample {
 
   def main(args: Array[String]): Unit = {
     // Creates a SparkSession.
